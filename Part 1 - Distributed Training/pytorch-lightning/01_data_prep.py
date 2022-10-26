@@ -96,13 +96,6 @@ bronze_df.write.format('delta').mode('overwrite').saveAsTable(f'{database_name}.
 
 # COMMAND ----------
 
-from delta.tables import DeltaTable
-
-deltaTable = DeltaTable.forName(spark, "bronze")
-display(deltaTable.detail())
-
-# COMMAND ----------
-
 spark.sql(f'SELECT * FROM {database_name}.{bronze_tbl_name}').display()
 
 # COMMAND ----------
@@ -142,7 +135,6 @@ silver_df = bronze_df.withColumn('label', get_label_udf('path'))
 silver_tbl_name = 'silver'
 silver_df.write.format('delta').mode('overwrite').saveAsTable(f'{database_name}.{silver_tbl_name}')
 
-
 # COMMAND ----------
 
 # MAGIC %md
@@ -157,7 +149,7 @@ silver_df.write.format('delta').mode('overwrite').saveAsTable(f'{database_name}.
 # COMMAND ----------
 
 # Load dataset from the Silver table
-dataset_df = spark.table(f'{database_name}.{silver_tbl_name}')
+dataset_df = spark.table("distributed_dl_workshop_udhayaraj_sivalingam.silver")
 display(dataset_df)
 
 # COMMAND ----------
@@ -223,11 +215,24 @@ silver_val_tbl_name = 'silver_val'
 
 (train_df.write.format('delta')
  .mode('overwrite')
- .saveAsTable(f'{database_name}.{silver_train_tbl_name}'))
+ .saveAsTable("distributed_dl_workshop_udhayaraj_sivalingam.silver_train"))
 
 (val_df.write.format('delta')
  .mode('overwrite')
- .saveAsTable(f'{database_name}.{silver_val_tbl_name}'))
+ .saveAsTable("distributed_dl_workshop_udhayaraj_sivalingam.silver_val"))
+
+# COMMAND ----------
+
+silver_train_tbl_name = 'silvertrain'
+silver_val_tbl_name = 'silverval'
+
+(train_df.write.format('delta')
+ .mode('overwrite')
+ .saveAsTable("distributed_dl_workshop_udhayaraj_sivalingam.silvertrain"))
+
+(val_df.write.format('delta')
+ .mode('overwrite')
+ .saveAsTable("distributed_dl_workshop_udhayaraj_sivalingam.silverval"))
 
 # COMMAND ----------
 

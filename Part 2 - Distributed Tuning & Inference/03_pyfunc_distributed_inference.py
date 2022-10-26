@@ -61,7 +61,7 @@ IMG_CHANNELS = 3
 
 CLASSES = ['daisy', 'dandelion', 'roses', 'sunflowers', 'tulips']
 
-BATCH_SIZE = 128
+BATCH_SIZE = 32
 EPOCHS = 3
 
 # COMMAND ----------

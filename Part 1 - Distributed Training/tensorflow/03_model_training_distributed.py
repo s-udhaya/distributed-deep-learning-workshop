@@ -41,7 +41,7 @@
 
 # COMMAND ----------
 
-# MAGIC %run ./00_setup 
+# MAGIC %run ../00_setup 
 
 # COMMAND ----------
 
@@ -78,7 +78,7 @@ IMG_HEIGHT = 224
 IMG_WIDTH = 224
 IMG_CHANNELS = 3
 
-BATCH_SIZE = 256
+BATCH_SIZE = 32
 EPOCHS = 3
 
 # COMMAND ----------
@@ -391,7 +391,7 @@ def train_and_evaluate_hvd():
 with mlflow.start_run(run_name='horovod_driver') as run:
     
     active_run_uuid = mlflow.active_run().info.run_uuid
-    hr = HorovodRunner(np=-1, driver_log_verbosity="all")
+    hr = HorovodRunner(np=1, driver_log_verbosity="all")
     hr.run(train_and_evaluate_hvd)
     
 mlflow.end_run()

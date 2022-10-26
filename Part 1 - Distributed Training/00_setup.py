@@ -8,7 +8,11 @@ my_name = user.split('@')[0].replace('.', '_')
 # Set config for database name, file paths, and table names
 database_name = f'distributed_dl_workshop_{my_name}'
 
+username = spark.sql("SELECT current_user()").first()['current_user()']
+
+
 print(f'database_name: {database_name}')
+print(f'username: {username}')
 
 # COMMAND ----------
 

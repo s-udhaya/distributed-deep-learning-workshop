@@ -154,69 +154,76 @@ if _HOROVOD_AVAILABLE:
 
 # COMMAND ----------
 
+def get_model(hvd_size, hvd_rank):
+  from src.model import LitClassificationModel
+  return LitClassificationModel(class_count=5, learning_rate=1e-5*hvd_size, 
+                                     device_id=hvd_rank, device_count=hvd_size, label_column="label")
+
+def get_data_module(hvd_size, hvd_rank, batch_size):
+  from src.data_module import FlowersDataModule
+  train_dataloader_callable = partial(data_loader, train_converter)
+  val_dataloader_callable = partial(data_loader, val_converter)
+  return FlowersDataModule(train_dataloader_callable=train_dataloader_callable, 
+                               val_dataloader_callable=val_dataloader_callable, reader_pool_type=READER_POOL_TYPE, label_column="label", device_id=hvd_rank, device_count=hvd_size, batch_size=batch_size, workers_count=WORKERS_COUNT)
+
+def get_train():
+  from src.training import train
+  return train
+
+# COMMAND ----------
+
 import mlflow
 from functools import partial
+from src.mlflow_util import prepare_mlflow_experiment
+
+experiment = prepare_mlflow_experiment(username, DATABRICKS_HOST, DATABRICKS_TOKEN, "pytorch-lightning-petastorm-dataframe-load")
 
 def train_hvd():
   from math import ceil
-  print("inside train")
-  
-
+  import sys
+  sys.path.append('/Workspace/Repos/udhayaraj.sivalingam@databricks.com/distributed-deep-learning-workshop/Part1-Distributed-Training/pytorch-lightning/src')
   hvd.init()
   import sys
   print(sys.path)
-  train_dataloader_callable = partial(data_loader, train_converter)
-  val_dataloader_callable = partial(data_loader, val_converter)
-  import src
-  print(dir(src))
+
+  print("importing src")
+
   # mlflow workaround to ensure that horovod subprocesses can find and connect to mlflow
   mlflow.set_tracking_uri("databricks")
-  experiment = src.mlflow_util.prepare_mlflow_experiment(username, DATABRICKS_HOST, DATABRICKS_TOKEN, "pytorch-lightning-petastorm-dataframe-load")
   
   ## we pass the experiment id over to the workers
   mlflow_experiment_id = experiment.experiment_id
   batch_size = BATCH_SIZE * NUM_DEVICES
   train_steps_per_epoch = ceil(len(train_converter) //  batch_size)
   val_steps_per_epoch = ceil(len(val_converter) //  batch_size)  
-  hvd_model = src.model.LitClassificationModel(class_count=5, learning_rate=1e-5*hvd.size(), 
-                                     device_id=hvd.rank(), device_count=hvd.size(), label_column="label")
+  hvd_model = get_model(hvd_size=hvd.size(),hvd_rank=hvd.rank())
   
-  hvd_datamodule = src.data_module.FlowersDataModule(train_dataloader_callable=train_dataloader_callable, 
-                               val_dataloader_callable=val_dataloader_callable, reader_pool_type=READER_POOL_TYPE, label_column="label", device_id=hvd.rank(), device_count=hvd.size(), batch_size=batch_size, workers_count=WORKERS_COUNT)
-  
+  hvd_datamodule = get_data_module(hvd_size=hvd.size(),hvd_rank=hvd.rank(), batch_size=batch_size)
+  default_dir = f'/dbfs/Users/{username}/tmp/lightning'
+
   # `gpus` parameter here should be 1 because the parallelism is controlled by Horovod
-  return src.training.train(hvd_model, hvd_datamodule, gpus=1, device_id=hvd.rank(), device_count=hvd.size(), batch_size=batch_size, 
+  return get_train(hvd_model, hvd_datamodule, gpus=1, device_id=hvd.rank(), device_count=hvd.size(), batch_size=batch_size, 
                mlflow_experiment_id=mlflow_experiment_id,
               default_dir=default_dir, train_steps_per_epoch=train_steps_per_epoch, val_steps_per_epoch=val_steps_per_epoch, workers_count=WORKERS_COUNT, 
       reader_pool_type=READER_POOL_TYPE, max_epochs=1000)
 
 # COMMAND ----------
 
-# from sparkdl import HorovodRunner
+from sparkdl import HorovodRunner
 
 # # with a negative np number, we will launch multi gpu training on one node
-# hr = HorovodRunner(np=-1, driver_log_verbosity='all')
-# hvd_model = hr.run(train_hvd)
+hr = HorovodRunner(np=-1, driver_log_verbosity='all')
+hvd_model = hr.run(train_hvd)
+
+# COMMAND ----------
+
+# MAGIC %run ./src/__init__.py
 
 # COMMAND ----------
 
 from sparkdl import HorovodRunner
-import datetime as dt
-import logging
-import pytorch_lightning as pl
-from pytorch_lightning.callbacks.early_stopping import EarlyStopping
-from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
-from pytorch_lightning.callbacks import TQDMProgressBar
-import mlflow
-import pytorch_lightning as pl
-from torchvision import models
-import torch.nn.functional as F
-import torchmetrics.functional as FM
-import torch
-import logging
-import datetime as dt
 
-device = torch.cuda.current_device()
+
 # This will launch a distributed training on np devices
 hr = HorovodRunner(np=2, driver_log_verbosity='all')
 hvd_model = hr.run(train_hvd)

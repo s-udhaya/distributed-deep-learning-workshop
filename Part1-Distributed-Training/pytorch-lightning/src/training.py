@@ -83,7 +83,6 @@ def train(model, dataloader, gpus:int=0,
       enable_model_summary=False,
       enable_checkpointing=False,
   )
-  
   if device_id == 0:
     with mlflow.start_run(experiment_id=mlflow_experiment_id) as run:
       mlflow.log_params({"workers_count": workers_count, "reader_pool_type": reader_pool_type, "batch_size": batch_size, "train_steps_per_epoch": train_steps_per_epoch, 

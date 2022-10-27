@@ -1,5 +1,12 @@
 import pytorch_lightning as pl
+from torchvision import models
+import torch.nn.functional as F
+import torchmetrics.functional as FM
+import torch
+import logging
+import datetime as dt
 
+device = torch.cuda.current_device()
 
 
 class LitClassificationModel(pl.LightningModule):

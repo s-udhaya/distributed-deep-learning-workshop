@@ -62,7 +62,7 @@ bronze_df = (spark.read.format('binaryFile')
              .option('pathGlobFilter', '*.jpg')
              .option('recursiveFileLookup', 'true')
              .load('/databricks-datasets/flower_photos/')
-             .sample(fraction=0.5)    # Sample to speed up training
+             #.sample(fraction=0.5)    # Sample to speed up training
             )
 
 bronze_df.display()
@@ -93,13 +93,6 @@ spark.conf.set('spark.sql.parquet.compression.codec', 'uncompressed')
 
 # Create a Delta Lake table from loaded 
 bronze_df.write.format('delta').mode('overwrite').saveAsTable(f'{database_name}.{bronze_tbl_name}')
-
-# COMMAND ----------
-
-from delta.tables import DeltaTable
-
-deltaTable = DeltaTable.forName(spark, "bronze")
-display(deltaTable.detail())
 
 # COMMAND ----------
 
@@ -142,7 +135,6 @@ silver_df = bronze_df.withColumn('label', get_label_udf('path'))
 silver_tbl_name = 'silver'
 silver_df.write.format('delta').mode('overwrite').saveAsTable(f'{database_name}.{silver_tbl_name}')
 
-
 # COMMAND ----------
 
 # MAGIC %md
@@ -156,9 +148,10 @@ silver_df.write.format('delta').mode('overwrite').saveAsTable(f'{database_name}.
 
 # COMMAND ----------
 
+silver_tbl_name = 'silver'
 # Load dataset from the Silver table
 dataset_df = spark.table(f'{database_name}.{silver_tbl_name}')
-display(dataset_df)
+#display(dataset_df)
 
 # COMMAND ----------
 
@@ -191,10 +184,30 @@ print(label_to_idx)
 
 # COMMAND ----------
 
+import pandas as pd
+from pyspark.sql.functions import col, pandas_udf
+from pyspark.sql.types import LongType
+
 # Define UDF to extract the image index
-@f.pandas_udf('int')
-def get_label_idx_udf(labels_col: pd.Series) -> pd.Series:
+def get_label_idx(labels_col: pd.Series) -> pd.Series:
     return labels_col.map(lambda label: label_to_idx[label])
+
+get_label_idx_udf = pandas_udf(get_label_idx, returnType=LongType())
+
+# Create train DataFrame with label index column
+train_df = (train_df
+            .withColumn('label_idx', get_label_idx_udf('label')))
+
+# Create val DataFrame with label index column
+val_df = (val_df
+          .withColumn('label_idx', get_label_idx_udf('label')))
+
+# COMMAND ----------
+
+# Define UDF to extract the image index
+@f.pandas_udf('float')
+def get_label_idx_udf(labels_col: pd.Series) -> pd.Series:
+    return labels_col.map(lambda label: float(label_to_idx[label]))
 
 # Create train DataFrame with label index column
 train_df = (train_df
@@ -218,14 +231,20 @@ val_df = (val_df
 
 # COMMAND ----------
 
+# MAGIC %sql
+# MAGIC 
+# MAGIC drop table distributed_dl_workshop_udhayaraj_sivalingam.silver_val
+
+# COMMAND ----------
+
 silver_train_tbl_name = 'silver_train'
 silver_val_tbl_name = 'silver_val'
 
-(train_df.write.format('delta')
+(train_df.repartition(32).write.format('delta')
  .mode('overwrite')
  .saveAsTable(f'{database_name}.{silver_train_tbl_name}'))
 
-(val_df.write.format('delta')
+(val_df.repartition(32).write.format('delta')
  .mode('overwrite')
  .saveAsTable(f'{database_name}.{silver_val_tbl_name}'))
 

@@ -1,5 +1,5 @@
 # Databricks notebook source
-# MAGIC %run ../00_setup 
+# MAGIC %run ../../Part0-setup-and-data-preparation/00_setup
 
 # COMMAND ----------
 
@@ -13,6 +13,8 @@
 # COMMAND ----------
 
 NUM_DEVICES = 2
+GPU_PER_DEVICE = 4
+WORLD_SIZE = NUM_DEVICES * GPU_PER_DEVICE
 BATCH_SIZE = 64
 
 READER_POOL_TYPE = "dummy"
@@ -33,7 +35,7 @@ CACHE_DIR = "file:///dbfs/tmp/petastorm/cache2"
 spark.conf.set(SparkDatasetConverter.PARENT_CACHE_DIR_URL_CONF, CACHE_DIR)
 
 flowers_df, train_converter, val_converter = prepare_data(data_dir=Data_Directory, 
-                                                          num_devices=NUM_DEVICES)
+                                                          num_devices=WORLD_SIZE)
 
 
 # COMMAND ----------
@@ -97,27 +99,22 @@ from functools import partial
 
 def train_hvd():
   from math import ceil
-  import sys
-  print("inside train")
-  print(sys.path)
 
-  print("imported src")
   print(dir(LitClassificationModel))
 
   hvd.init()
-  import sys
+
   train_dataloader_callable = partial(data_loader, train_converter)
   val_dataloader_callable = partial(data_loader, val_converter)
-  print("importing src")
 
   # mlflow workaround to ensure that horovod subprocesses can find and connect to mlflow
   mlflow.set_tracking_uri("databricks")
   experiment = prepare_mlflow_experiment(username, DATABRICKS_HOST, DATABRICKS_TOKEN, "pytorch-lightning-petastorm-dataframe-load")
-  
+  print("Total workers: ", hvd.size())
   ## we pass the experiment id over to the workers
   mlflow_experiment_id = experiment.experiment_id
-  train_steps_per_epoch = ceil(len(train_converter) //  (BATCH_SIZE * NUM_DEVICES))
-  val_steps_per_epoch = ceil(len(val_converter) //  (BATCH_SIZE * NUM_DEVICES))  
+  train_steps_per_epoch = ceil(len(train_converter) //  (BATCH_SIZE * WORLD_SIZE))
+  val_steps_per_epoch = ceil(len(val_converter) //  (BATCH_SIZE * WORLD_SIZE))  
   hvd_model = LitClassificationModel(class_count=5, learning_rate=1e-5*hvd.size(), 
                                      device_id=hvd.rank(), device_count=hvd.size(), label_column="label")
   
@@ -126,7 +123,7 @@ def train_hvd():
   default_dir = f'/dbfs/Users/{username}/tmp/lightning'
   
   # `gpus` parameter here should be 1 because the parallelism is controlled by Horovod
-  return train(hvd_model, hvd_datamodule, gpus=1, device_id=hvd.rank(), device_count=hvd.size(), batch_size=BATCH_SIZE, 
+  return train(hvd_model, hvd_datamodule, gpus=1, strategy="horovod", device_id=hvd.rank(), device_count=hvd.size(), batch_size=BATCH_SIZE, 
                mlflow_experiment_id=mlflow_experiment_id,
               default_dir=default_dir, train_steps_per_epoch=train_steps_per_epoch, val_steps_per_epoch=val_steps_per_epoch, workers_count=WORKERS_COUNT, 
       reader_pool_type=READER_POOL_TYPE, max_epochs=MAX_EPOCHS)
@@ -144,5 +141,5 @@ def train_hvd():
 from sparkdl import HorovodRunner
 
 # This will launch a distributed training on np devices
-hr = HorovodRunner(np=2, driver_log_verbosity='all')
+hr = HorovodRunner(np=8, driver_log_verbosity='all')
 hvd_model = hr.run(train_hvd)

@@ -91,7 +91,6 @@ import torch
 import logging
 import datetime as dt
 
-device = torch.cuda.current_device()
 
 
 class LitClassificationModel(pl.LightningModule):
@@ -160,7 +159,8 @@ class LitClassificationModel(pl.LightningModule):
     return outputs
   
   def training_step(self, batch, batch_idx):
-    X, y = batch[self.feature_column], batch[self.label_column].type(torch.LongTensor).to(device)
+    # todo remove to device
+    X, y = batch[self.feature_column], batch[self.label_column]#.type(torch.LongTensor).to(self.device_id)
     pred = self(X)
     loss = F.cross_entropy(pred, y)
     
@@ -181,7 +181,7 @@ class LitClassificationModel(pl.LightningModule):
     self.state["epochs"] += 1
     
   def validation_step(self, batch, batch_idx):
-    X, y = batch[self.feature_column], batch[self.label_column].type(torch.LongTensor).to(device)
+    X, y = batch[self.feature_column], batch[self.label_column]#.type(torch.LongTensor).to(self.device_id)
     pred = self(X)
     loss = F.cross_entropy(pred, y)
     acc = FM.accuracy(pred, y)
@@ -314,7 +314,7 @@ def report_duration(action, start):
   print(msg)
 
 
-def train(model, dataloader, gpus:int=0, 
+def train(model, dataloader, gpus:int=0, num_nodes:int=1,
           strategy:str=None, device_id:int=0, 
           device_count:int=1, batch_size:int=16, train_steps_per_epoch:int=1, val_steps_per_epoch:int=1, max_epochs:int=1000, workers_count: int = 1, reader_pool_type: str = "dummy", logging_level=logging.INFO,
           default_dir:str='/dbfs/tmp/trainer_logs',
@@ -351,7 +351,9 @@ def train(model, dataloader, gpus:int=0,
   # done here with `limit_train_batches` parameter
   # https://pytorch-lightning.readthedocs.io/en/stable/_modules/pytorch_lightning/core/hooks.html#ModelHooks.on_train_batch_start
   trainer = pl.Trainer(
-      gpus=gpus,
+    accelerator='gpu', 
+    devices=gpus, 
+    num_nodes=num_nodes,
       max_epochs=max_epochs,
       limit_train_batches=train_steps_per_epoch,  # this is the way to end the epoch
       log_every_n_steps=1,
@@ -369,6 +371,8 @@ def train(model, dataloader, gpus:int=0,
   print(f"strategy is {trainer.strategy}")
 
   if device_id == 0:
+    import torch
+    print("device count: ", torch.cuda.device_count())
     with mlflow.start_run(experiment_id=mlflow_experiment_id) as run:
       mlflow.log_params({"workers_count": workers_count, "reader_pool_type": reader_pool_type, "batch_size": batch_size, "train_steps_per_epoch": train_steps_per_epoch, 
           "val_steps_per_epoch": val_steps_per_epoch})
@@ -376,7 +380,9 @@ def train(model, dataloader, gpus:int=0,
       report_duration(f"Training", start)
       print("\n\n---------------------")
   else:
+    print(f"training on: {device_id} started")
     trainer.fit(model, dataloader, ckpt_path=ckpt_restore)
-      
+    print(f"training on: {device_id} ended")
+  
   
   return model.model if device_id == 0 else None

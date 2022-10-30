@@ -41,7 +41,7 @@
 
 # COMMAND ----------
 
-# MAGIC %run ../00_setup 
+# MAGIC %run ../../Part0-setup-and-data-preparation/00_setup
 
 # COMMAND ----------
 
